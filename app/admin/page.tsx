@@ -1,12 +1,21 @@
 "use client";
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { CheckCircle, XCircle, RefreshCw } from "lucide-react";
 
 export default function AdminPanelPage() {
+  const router = useRouter();
+  
+  // State Keamanan
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authorized, setAuthorized] = useState(false);
+
+  // State Fitur Admin Anda
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Fungsi mengambil data pending
   const fetchPending = async () => {
     setLoading(true);
     const { data } = await supabase
@@ -19,18 +28,51 @@ export default function AdminPanelPage() {
     setLoading(false);
   };
 
+  // Gerbang Keamanan Utama sebelum data ditampilkan
   useEffect(() => {
-    fetchPending();
-  }, []);
+    const checkAdminAccess = async () => {
+      try {
+        // 1. Cek sesi login aktif
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          router.push("/");
+          return;
+        }
 
-  // PERBAIKAN UTAMA: Menggunakan objek langsung agar parameter tidak tertukar/geser
+        // 2. Cek apakah role di database adalah 'admin'
+        const { data: profile, error } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", session.user.id)
+          .single();
+
+        if (error || profile?.role !== "admin") {
+          alert("Akses Ditolak: Anda bukan Administrator!");
+          router.push("/dashboard");
+          return;
+        }
+
+        // Jika lolos sekuriti
+        setAuthorized(true);
+        fetchPending(); // Jalankan pengambilan data internal admin
+      } catch (err) {
+        console.error("Gagal memvalidasi hak akses admin:", err);
+        router.push("/");
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+
+    checkAdminAccess();
+  }, [router]);
+
+  // Eksekusi keputusan persetujuan/penolakan
   const handleDecision = async (item: any, action: "approve" | "reject") => {
     const isApprove = action === "approve";
     if (!confirm(`Yakin ingin ${isApprove ? "MENYETUJUI" : "MENOLAK"} transaksi ini?`)) return;
 
     try {
       if (isApprove) {
-        // 1. Ambil saldo terbaru user langsung dari database agar akurat
         const { data: prof, error: profFetchError } = await supabase
           .from("profiles")
           .select("wallet_balance")
@@ -42,13 +84,9 @@ export default function AdminPanelPage() {
         const oldBalance = Number(prof?.wallet_balance || 0);
         const amount = Number(item.amount);
         
-        // 2. Deteksi tipe transaksi secara ketat (case-insensitive & trim spasi)
         const isWithdraw = item.type?.trim().toLowerCase() === "withdraw";
-        
-        // LOGIKA MATEMATIKA: Jika withdraw maka dikurangi (-), jika deposit ditambah (+)
         const newBalance = isWithdraw ? oldBalance - amount : oldBalance + amount;
 
-        // 3. Update saldo baru ke profil user
         const { error: profUpdateError } = await supabase
           .from("profiles")
           .update({ wallet_balance: newBalance })
@@ -57,7 +95,6 @@ export default function AdminPanelPage() {
         if (profUpdateError) throw profUpdateError;
       }
 
-      // 4. Update status transaksi di tabel deposits
       const { error: depositError } = await supabase
         .from("deposits")
         .update({ status: isApprove ? "approved" : "rejected" })
@@ -72,6 +109,22 @@ export default function AdminPanelPage() {
     }
   };
 
+  // 1. Dinding Proteksi Awal (Mencegah kedipan UI halaman admin bocor ke publik)
+  if (authLoading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-slate-950 text-white">
+        <div className="text-center">
+          <p className="text-xl font-bold tracking-wider animate-pulse text-red-500">AURORA SECURITY SYSTEM</p>
+          <p className="text-sm text-slate-400 mt-2">Memeriksa otoritas enkripsi administrator...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Jika tidak diizinkan, blokir rendering halaman sepenuhnya
+  if (!authorized) return null;
+
+  // 2. Render Halaman Utama Admin (Hanya tampil jika lolos verifikasi admin)
   return (
     <div className="p-6 max-w-7xl mx-auto text-xs font-sans bg-slate-50 min-h-screen text-slate-700">
       <div className="flex justify-between items-center mb-6">

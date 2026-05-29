@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -8,23 +9,51 @@ import { supabase } from "@/lib/supabase";
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  
+  // State Keamanan & Data Profil
   const [profile, setProfile] = useState<any>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
 
   useEffect(() => {
-    async function fetchProfile() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+    async function checkAuthAndFetchProfile() {
+      try {
+        // 1. Ambil sesi login aktif dari Supabase Auth
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        // JIKA TIDAK LOGIN: Tendang langsung ke halaman utama/login
+        // Catatan: Ubah "/login" menjadi "/" jika halaman login Anda berada di root utama
+        if (!session) {
+          router.push("/"); 
+          return;
+        }
+
+        // 2. Jika sesi ada, ambil data profil lengkap dari tabel database
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", session.user.id)
+          .single();
+        
+        if (error) throw error;
+        
         setProfile(data);
+        setAuthenticated(true); // Izinkan akses masuk ke dashboard
+      } catch (error) {
+        console.error("Gagal memproses verifikasi keamanan:", error);
+        router.push("/"); // Jalur aman: kembalikan ke halaman depan jika terjadi error
+      } finally {
+        setLoading(false); // Matikan layar loading proteksi
       }
     }
-    fetchProfile();
-  }, []);
+    
+    checkAuthAndFetchProfile();
+  }, [router]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    router.push("/login");
+    router.push("/"); // Setelah logout, arahkan kembali ke halaman utama
   };
 
   const navItems = [
@@ -34,6 +63,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: "Riwayat", href: "/dashboard/riwayat", icon: History },
     { name: "Profil", href: "/dashboard/profil", icon: User },
   ];
+
+  // LAYAR LOADING PROTEKSI (Mencegah kebocoran UI sebelum cek login selesai)
+  if (loading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-slate-950 text-white">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-xl font-bold tracking-wider animate-pulse text-blue-400">AURORA GATEKEEPER</p>
+          <p className="text-sm text-slate-400 mt-2">Sinkronisasi keamanan sesi akun...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Jika tidak lolos otentikasi, cekal rendering halaman demi keamanan
+  if (!authenticated) return null;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col md:flex-row pb-16 md:pb-0">
@@ -67,9 +112,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           
           <div className="relative">
             <button onClick={() => setIsDropdownOpen(!isDropdownOpen)} className="flex items-center gap-2 bg-slate-50 border border-slate-200/60 rounded-full py-1.5 pl-3 pr-1.5 hover:bg-slate-100 transition-all">
-              <span className="text-xs font-semibold text-slate-700">{profile?.full_name || "User"}</span>
+              <span className="text-xs font-semibold text-slate-700">{profile?.full_name || profile?.name || "User"}</span>
               <div className="h-7 w-7 bg-blue-600 rounded-full flex items-center justify-center text-xs font-bold text-white uppercase shadow-sm">
-                {profile?.full_name?.substring(0, 2) || "AU"}
+                {(profile?.full_name || profile?.name || "AU").substring(0, 2)}
               </div>
             </button>
             {isDropdownOpen && (
