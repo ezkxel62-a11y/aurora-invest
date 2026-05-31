@@ -25,6 +25,24 @@ export default function AdminPanelPage() {
   // State Modal Preview Bukti Transfer
   const [selectedProofUrl, setSelectedProofUrl] = useState<string | null>(null);
 
+  // FUNGSI BARU: Update pesan di Telegram saat Admin klik tombol di Panel
+  const updateTelegramMessage = async (item: any, status: string) => {
+    try {
+      await fetch(`https://api.telegram.org/bot8769600539:AAEDhHK-QjFQzbRwiAnGg2mi1_iaw3h2-r4/editMessageText`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: item.telegram_chat_id,
+          message_id: item.telegram_message_id,
+          text: `*Status Transaksi Diperbarui*\n\nNominal: Rp ${Number(item.amount).toLocaleString('id-ID')}\nStatus: ${status === 'approved' ? '✅ BERHASIL' : '❌ DITOLAK'}\n\nDiproses oleh Admin Panel Aurora.`,
+          parse_mode: 'Markdown',
+        }),
+      });
+    } catch (e) {
+      console.error("Gagal update Telegram:", e);
+    }
+  };
+
   // Fungsi mengambil seluruh data transaksi beserta detail data rekening profil investor
   const fetchTransactions = async () => {
     setLoading(true);
@@ -98,16 +116,12 @@ export default function AdminPanelPage() {
   useEffect(() => {
     if (!authorized) return;
 
-    // 1. Inisialisasi AudioContext (Mendukung browser Safari lama & baru)
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     const audioCtx = new AudioContextClass();
     audioContextRef.current = audioCtx;
 
-    // 2. Fungsi Pembuat Suara "Ding-Dong" Elektronik Langsung dari Hardware HP
     const playSyntheticNotification = () => {
       if (!audioCtx) return;
-      
-      // Paksa bangunkan audio engine jika ditidurkan secara sepihak oleh sistem iOS
       if (audioCtx.state === "suspended") {
         audioCtx.resume().catch((e) => console.log("Gagal membangunkan audio:", e));
       }
@@ -115,13 +129,10 @@ export default function AdminPanelPage() {
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
 
-      osc.type = "sine"; // Gelombang sinus jernih berbentuk lonceng
-      
-      // Efek nada ganda (Ding-Dong) yang nyaring di speaker HP
-      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // Nada pertama (D5)
-      osc.frequency.setValueAtTime(880.00, audioCtx.currentTime + 0.1); // Nada kedua lebih tinggi (A5)
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+      osc.frequency.setValueAtTime(880.00, audioCtx.currentTime + 0.1);
 
-      // Mengatur volume dan efek memudar (Fade-out) halus
       gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
 
@@ -129,10 +140,9 @@ export default function AdminPanelPage() {
       gain.connect(audioCtx.destination);
 
       osc.start();
-      osc.stop(audioCtx.currentTime + 0.4); // Suara mati otomatis dalam waktu 0.4 detik
+      osc.stop(audioCtx.currentTime + 0.4);
     };
 
-    // 3. Fungsi Pembuka Kunci Otomatis (Membuka batasan senyap Apple Autoplay via Interaksi Fisik Pertama)
     const unlockAudio = () => {
       if (audioCtx.state === "suspended") {
         audioCtx.resume().then(() => {
@@ -141,17 +151,13 @@ export default function AdminPanelPage() {
       } else {
         setIsAudioUnlocked(true);
       }
-      
-      // CRITICAL FIX: Hapus listener setelah interaksi pertama agar tidak memicu bunyi di setiap ketukan berikutnya!
       document.removeEventListener("click", unlockAudio);
       document.removeEventListener("touchstart", unlockAudio);
     };
 
-    // Daftarkan aksi sentuhan fisik pertama user pada layar iPhone untuk memicu izin audio
     document.addEventListener("click", unlockAudio);
     document.addEventListener("touchstart", unlockAudio);
 
-    // 4. Manajemen Jalur Jaringan Realtime Supabase dengan Fitur Auto-Reconnect
     let channel: any = null;
 
     const startRealtimeSubscription = () => {
@@ -165,34 +171,22 @@ export default function AdminPanelPage() {
           "postgres_changes",
           { event: "INSERT", schema: "public", table: "deposits" },
           (payload) => {
-            console.log("Transaksi Masuk Terdeteksi via Realtime:", payload);
-            
-            // Mainkan alarm HANYA saat ada transaksi riil baru masuk
             playSyntheticNotification(); 
-            
-            // CRITICAL REALTIME FIX: Masukkan data baru ke UI secara instan agar tidak perlu refresh manual
             setTransactions((prev) => [payload.new, ...prev]);
-            
-            // Tarik data profil relasi lengkap dari database di latar belakang
             fetchTransactions(); 
           }
         )
-        .subscribe((status) => {
-          console.log("Status Koneksi Jalur Realtime Aurora:", status);
-        });
+        .subscribe();
     };
 
-    // Jalankan subskripsi saat halaman dimuat pertama kali
     startRealtimeSubscription();
 
-    // Solusi Utama iOS PWA: Sinkronisasi ulang otomatis saat aplikasi dibuka kembali (dari background/setelah idle)
     const handlePWAResume = () => {
-      console.log("PWA Mendapat Otoritas Fokus Kembali, Memperbarui Koneksi Jaringan & Audio...");
       if (audioCtx && audioCtx.state === "suspended") {
         audioCtx.resume().catch((e) => console.log(e));
       }
-      startRealtimeSubscription(); // Pasang ulang WebSocket yang terputus oleh iOS
-      fetchTransactions(); // Tarik data terbaru untuk mengamankan data yang masuk saat idle
+      startRealtimeSubscription();
+      fetchTransactions();
     };
 
     window.addEventListener("focus", handlePWAResume);
@@ -213,7 +207,6 @@ export default function AdminPanelPage() {
     };
   }, [authorized]);
 
-  // Fungsi untuk memicu tes suara mandiri sekaligus memaksa mengaktifkan AudioContext jika tertidur
   const triggerManualSoundTest = () => {
     if (audioContextRef.current) {
       const ctx = audioContextRef.current;
@@ -223,7 +216,7 @@ export default function AdminPanelPage() {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = "sine";
-      osc.frequency.setValueAtTime(783.99, ctx.currentTime); // Nada G5 tinggi yang nyaring
+      osc.frequency.setValueAtTime(783.99, ctx.currentTime);
       gain.gain.setValueAtTime(0.3, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
       osc.connect(gain);
@@ -234,7 +227,6 @@ export default function AdminPanelPage() {
     }
   };
 
-  // Eksekusi keputusan persetujuan/penolakan
   const handleDecision = async (item: any, action: "approve" | "reject") => {
     const isApprove = action === "approve";
     if (!confirm(`Yakin ingin ${isApprove ? "MENYETUJUI" : "MENOLAK"} transaksi ini?`)) return;
@@ -251,7 +243,6 @@ export default function AdminPanelPage() {
 
         const oldBalance = Number(prof?.wallet_balance || 0);
         const amount = Number(item.amount);
-        
         const isWithdraw = item.type?.trim().toLowerCase() === "withdraw";
         const newBalance = isWithdraw ? oldBalance - amount : oldBalance + amount;
 
@@ -270,7 +261,12 @@ export default function AdminPanelPage() {
 
       if (depositError) throw depositError;
 
-      alert("Keputusan berhasil disimpan dan saldo telah disinkronkan!");
+      // Sinkronisasi status ke Telegram
+      if (item.telegram_message_id) {
+        await updateTelegramMessage(item, isApprove ? "approved" : "rejected");
+      }
+
+      alert("Keputusan berhasil disimpan!");
       fetchTransactions();
     } catch (err: any) {
       alert("Error: " + err.message);
@@ -293,14 +289,12 @@ export default function AdminPanelPage() {
   return (
     <div className="p-3 md:p-6 max-w-7xl mx-auto text-xs font-sans bg-slate-50 min-h-screen text-slate-700">
       
-      {/* Bagian Header Menu */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h2 className="text-base md:text-lg font-black text-slate-900 tracking-tight">🛡️ Control Panel Admin Aurora</h2>
           <p className="text-slate-400 text-[11px] mt-0.5">Sistem sinkronisasi saldo investasi dan database investor.</p>
         </div>
         
-        {/* Kontrol Fleksibel Indikator Audio Proteksi iOS & Tombol Refresh */}
         <div className="w-full sm:w-auto flex flex-col sm:flex-row sm:items-center gap-2">
           <button 
             type="button"
@@ -322,7 +316,6 @@ export default function AdminPanelPage() {
         </div>
       </div>
 
-      {/* Tab Navigasi - Responsif */}
       <div className="flex border-b border-slate-200 mb-6 gap-1 bg-slate-200/60 p-1 rounded-xl w-full max-w-xs">
         <button
           type="button"
@@ -344,10 +337,8 @@ export default function AdminPanelPage() {
         </button>
       </div>
 
-      {/* ==================== TAB 1: KENDALI TRANSAKSI ==================== */}
       {activeTab === "transactions" && (
         <div>
-          {/* TAMPILAN DESKTOP: Tabel Tradisional Lengkap */}
           <div className="hidden md:block bg-white rounded-2xl shadow-sm overflow-hidden border border-slate-200">
             <table className="w-full text-left">
               <thead className="bg-slate-900 text-white text-[10px] uppercase font-bold tracking-wider">
@@ -434,7 +425,6 @@ export default function AdminPanelPage() {
             </table>
           </div>
 
-          {/* TAMPILAN IPHONE MOBILE: Fluid & Rapi */}
           <div className="block md:hidden space-y-4">
             {loading ? (
               <div className="p-6 text-center text-slate-400 animate-pulse">Memuat data...</div>
@@ -456,9 +446,7 @@ export default function AdminPanelPage() {
                         "bg-amber-50 text-amber-600 border-amber-100"
                       }`}>{item.status?.toUpperCase()}</span>
                     </div>
-
                     <div className="border-t border-slate-50"></div>
-
                     <div className="grid grid-cols-2 gap-2 text-[11px]">
                       <div>
                         <span className="text-slate-400 font-medium block">Jenis Transaksi:</span>
@@ -477,8 +465,6 @@ export default function AdminPanelPage() {
                         )}
                       </div>
                     </div>
-
-                    {/* KOTAK INFORMASI DETAIL DATA REKENING USER */}
                     <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 flex items-start gap-2 text-[11px]">
                       <CreditCard className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
                       <div className="space-y-0.5 min-w-0 flex-1">
@@ -491,12 +477,10 @@ export default function AdminPanelPage() {
                         </p>
                       </div>
                     </div>
-
                     <div className="flex justify-between items-center bg-slate-50/50 rounded-2xl px-3 py-2">
                       <span className="text-slate-500 font-semibold text-[11px]">Nominal Asset:</span>
                       <span className="font-black text-sm text-slate-900">Rp {item.amount?.toLocaleString("id-ID") || 0}</span>
                     </div>
-
                     {item.status === "pending" && (
                       <div className="grid grid-cols-2 gap-2 pt-1">
                         <button type="button" onClick={() => handleDecision(item, "approve")} className="bg-emerald-600 text-white font-bold py-2 rounded-xl text-center active:bg-emerald-700 flex items-center justify-center gap-1 transition-all">
@@ -515,7 +499,6 @@ export default function AdminPanelPage() {
         </div>
       )}
 
-      {/* ==================== TAB 2: DAFTAR USER INVESTOR ==================== */}
       {activeTab === "investors" && (
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-slate-200">
           <div className="overflow-x-auto">
@@ -562,12 +545,10 @@ export default function AdminPanelPage() {
         </div>
       )}
 
-      {/* ==================== SCREEN POP-UP: MODAL PREVIEW BUKTI TRANSFER ==================== */}
       {selectedProofUrl && (
         <div className="fixed inset-0 z-50 bg-slate-950/90 flex items-center justify-center p-4 backdrop-blur-xs">
           <div className="bg-white p-4 rounded-2xl max-w-sm w-full border border-slate-200 shadow-2xl relative text-center animate-in fade-in zoom-in-95 duration-150">
             <h3 className="text-xs font-bold text-slate-800 mb-3 border-b border-slate-100 pb-2">🖼️ Validasi Foto Bukti Kiriman Investor</h3>
-            
             <div className="bg-slate-50 p-2 rounded-xl border border-slate-200 max-h-[60vh] overflow-hidden flex items-center justify-center">
               <img 
                 src={selectedProofUrl} 
@@ -578,7 +559,6 @@ export default function AdminPanelPage() {
                 }}
               />
             </div>
-
             <button 
               type="button"
               onClick={() => setSelectedProofUrl(null)} 
