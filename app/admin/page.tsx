@@ -21,7 +21,6 @@ export default function AdminPanelPage() {
   // State Proteksi & Engine Web Audio API khusus untuk iPhone / PWA iOS
   const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const audioBufferRef = useRef<AudioBuffer | null>(null);
 
   // State Modal Preview Bukti Transfer
   const [selectedProofUrl, setSelectedProofUrl] = useState<string | null>(null);
@@ -95,7 +94,7 @@ export default function AdminPanelPage() {
     checkAdminAccess();
   }, [router]);
 
-  // Efek Realtime Listener & Mekanisme Bypass Keamanan Suara iOS Safari dengan Web Audio API
+  // Efek Realtime Listener & Mekanisme Bypass Keamanan Suara iOS Safari (Menggunakan Synthesizer Internal Hardware)
   useEffect(() => {
     if (!authorized) return;
 
@@ -104,26 +103,51 @@ export default function AdminPanelPage() {
     const audioCtx = new AudioContextClass();
     audioContextRef.current = audioCtx;
 
-    // 2. Unduh berkas suara dan simpan langsung ke dalam RAM sistem ponsel
-    fetch("/ping.mp3")
-      .then((res) => res.arrayBuffer())
-      .then((buffer) => audioCtx.decodeAudioData(buffer))
-      .then((decodedData) => {
-        audioBufferRef.current = decodedData;
-        console.log("Audio Buffer terenkripsi siap digunakan.");
-      })
-      .catch((err) => console.error("Gagal memuat berkas audio:", err));
+    // 2. Fungsi Pembuat Suara "Ding-Dong" Elektronik Langsung dari Hardware HP (Tanpa File MP3)
+    const playSyntheticNotification = () => {
+      if (!audioCtx) return;
+      
+      // Paksa bangunkan audio engine jika ditidurkan secara sepihak oleh sistem iOS
+      if (audioCtx.state === "suspended") {
+        audioCtx.resume();
+      }
 
-    // 3. Fungsi Pembuka Kunci Otomatis (Membuka batasan senyap Apple Autoplay)
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.type = "sine"; // Gelombang sinus jernih berbentuk lonceng
+      
+      // Efek nada ganda (Ding-Dong) yang nyaring
+      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // Nada pertama (D5)
+      osc.frequency.setValueAtTime(880.00, audioCtx.currentTime + 0.1); // Nada kedua lebih tinggi (A5)
+
+      // Mengatur volume dan efek memudar (Fade-out) halus
+      gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.4); // Suara mati otomatis dalam waktu 0.4 detik
+    };
+
+    // 3. Fungsi Pembuka Kunci Otomatis (Membuka batasan senyap Apple Autoplay via Interaksi Fisik Pertama)
     const unlockAudio = () => {
       if (audioCtx.state === "suspended") {
         audioCtx.resume().then(() => {
+          playSyntheticNotification(); // Pemicu wajib agar iOS menyetujui hak akses audio
           setIsAudioUnlocked(true);
-          console.log("Audio Engine Berhasil Diaktifkan di iPhone PWA");
+          console.log("Audio Engine internal iPhone berhasil di-unlock.");
         });
-      } else if (audioCtx.state === "running") {
+      } else {
+        playSyntheticNotification();
         setIsAudioUnlocked(true);
       }
+      
+      // Bersihkan event listener agar tidak memicu suara di setiap ketukan berikutnya
+      document.removeEventListener("click", unlockAudio);
+      document.removeEventListener("touchstart", unlockAudio);
     };
 
     // Daftarkan aksi sentuhan fisik pertama user pada layar iPhone untuk memicu izin audio
@@ -137,14 +161,8 @@ export default function AdminPanelPage() {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "deposits" },
         () => {
-          // Putar audio langsung dari RAM buffer (Tembus blokade background task iOS)
-          if (audioContextRef.current && audioBufferRef.current) {
-            const ctx = audioContextRef.current;
-            const source = ctx.createBufferSource();
-            source.buffer = audioBufferRef.current;
-            source.connect(ctx.destination);
-            source.start(0);
-          }
+          // Putar sinyal suara sintetis langsung melalui hardware internal ponsel
+          playSyntheticNotification();
           
           // Segarkan list data otomatis
           fetchTransactions();
