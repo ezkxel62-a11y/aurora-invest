@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { CheckCircle, XCircle, RefreshCw, Eye, Users, FileText } from "lucide-react";
+import { CheckCircle, XCircle, RefreshCw, Eye, Users, FileText, CreditCard } from "lucide-react";
 
 export default function AdminPanelPage() {
   const router = useRouter();
@@ -21,12 +21,12 @@ export default function AdminPanelPage() {
   // State Modal Preview Bukti Transfer
   const [selectedProofUrl, setSelectedProofUrl] = useState<string | null>(null);
 
-  // Fungsi mengambil seluruh data transaksi (agar bisa lihat bukti yang lalu juga)
+  // Fungsi mengambil seluruh data transaksi beserta detail data rekening profil investor
   const fetchTransactions = async () => {
     setLoading(true);
     const { data } = await supabase
       .from("deposits")
-      .select("*, profiles(full_name, email)")
+      .select("*, profiles(full_name, email, payment_method, account_number, account_name)")
       .order("created_at", { ascending: false });
     
     if (data) setTransactions(data);
@@ -54,18 +54,16 @@ export default function AdminPanelPage() {
     }
   };
 
-  // Gerbang Keamanan Utama sebelum data ditampilkan
+  // Gerbang Keamanan Utama & Inisialisasi Realtime Listener
   useEffect(() => {
     const checkAdminAccess = async () => {
       try {
-        // 1. Cek sesi login aktif
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           router.push("/");
           return;
         }
 
-        // 2. Cek apakah role di database adalah 'admin'
         const { data: profile, error } = await supabase
           .from("profiles")
           .select("role")
@@ -78,10 +76,9 @@ export default function AdminPanelPage() {
           return;
         }
 
-        // Jika lolos sekuriti
         setAuthorized(true);
-        fetchTransactions(); // Jalankan pengambilan data transaksi
-        fetchInvestors();    // Jalankan pengambilan data investor
+        fetchTransactions();
+        fetchInvestors();
       } catch (err) {
         console.error("Gagal memvalidasi hak akses admin:", err);
         router.push("/");
@@ -92,6 +89,32 @@ export default function AdminPanelPage() {
 
     checkAdminAccess();
   }, [router]);
+
+  // Efek Realtime Listener untuk Mendeteksi Transaksi Baru Masuk
+  useEffect(() => {
+    if (!authorized) return;
+
+    // Berlangganan ke tabel 'deposits' secara realtime
+    const channel = supabase
+      .channel("realtime-admin-deposits")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "deposits" },
+        () => {
+          // Mainkan audio notifikasi ketika ada investor mengajukan deposit/withdraw baru
+          const audio = new Audio("/ping.mp3");
+          audio.play().catch((err) => console.log("Pemutaran suara menunggu ketukan layar pertama user:", err));
+          
+          // Segarkan list data otomatis
+          fetchTransactions();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [authorized]);
 
   // Eksekusi keputusan persetujuan/penolakan
   const handleDecision = async (item: any, action: "approve" | "reject") => {
@@ -136,7 +159,6 @@ export default function AdminPanelPage() {
     }
   };
 
-  // 1. Dinding Proteksi Awal (Mencegah kedipan UI halaman admin bocor ke publik)
   if (authLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-slate-950 text-white">
@@ -148,12 +170,10 @@ export default function AdminPanelPage() {
     );
   }
 
-  // Jika tidak diizinkan, blokir rendering halaman sepenuhnya
   if (!authorized) return null;
 
-  // 2. Render Halaman Utama Admin (Mendukung Desktop & Android Mobile)
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto text-xs font-sans bg-slate-50 min-h-screen text-slate-700">
+    <div className="p-3 md:p-6 max-w-7xl mx-auto text-xs font-sans bg-slate-50 min-h-screen text-slate-700">
       
       {/* Bagian Header Menu */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
@@ -169,8 +189,8 @@ export default function AdminPanelPage() {
         </button>
       </div>
 
-      {/* Tab Navigasi - Sangat Friendly untuk Sentuhan Jari di Android */}
-      <div className="flex border-b border-slate-200 mb-6 gap-1 bg-slate-200/60 p-1 rounded-xl max-w-sm">
+      {/* Tab Navigasi - Responsif */}
+      <div className="flex border-b border-slate-200 mb-6 gap-1 bg-slate-200/60 p-1 rounded-xl w-full max-w-xs">
         <button
           onClick={() => setActiveTab("transactions")}
           className={`flex items-center justify-center gap-1.5 w-1/2 py-2.5 font-bold rounded-lg transition-all text-xs ${
@@ -191,14 +211,14 @@ export default function AdminPanelPage() {
 
       {/* ==================== TAB 1: KENDALI TRANSAKSI ==================== */}
       {activeTab === "transactions" && (
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-slate-200">
-          
+        <div>
           {/* TAMPILAN DESKTOP: Tabel Tradisional Lengkap */}
-          <div className="hidden md:block overflow-x-auto">
+          <div className="hidden md:block bg-white rounded-2xl shadow-sm overflow-hidden border border-slate-200">
             <table className="w-full text-left">
               <thead className="bg-slate-900 text-white text-[10px] uppercase font-bold tracking-wider">
                 <tr>
                   <th className="p-4">Anggota</th>
+                  <th className="p-4">Info Rekening Tujuan</th>
                   <th className="p-4">Tipe Transaksi</th>
                   <th className="p-4">Nominal</th>
                   <th className="p-4">Bukti TF</th>
@@ -209,11 +229,11 @@ export default function AdminPanelPage() {
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-slate-400 animate-pulse font-medium">Memeriksa data keuangan...</td>
+                    <td colSpan={7} className="p-8 text-center text-slate-400 animate-pulse font-medium">Memeriksa data keuangan...</td>
                   </tr>
                 ) : transactions.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">Tidak ada riwayat permohonan.</td>
+                    <td colSpan={7} className="p-8 text-center text-slate-400 font-medium">Tidak ada riwayat permohonan.</td>
                   </tr>
                 ) : (
                   transactions.map((item) => {
@@ -221,12 +241,18 @@ export default function AdminPanelPage() {
                     return (
                       <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                         <td className="p-4">
-                          <p className="font-bold uppercase text-slate-800">{item.profiles?.full_name || "Tanpa Nama"}</p>
+                          <p className="font-bold uppercase text-slate-800">{item.profiles?.full_name || "Investor"}</p>
                           <p className="text-slate-400 lowercase mt-0.5">{item.profiles?.email}</p>
                         </td>
                         <td className="p-4">
+                          <div className="text-[11px] space-y-0.5">
+                            <span className="font-bold text-slate-800">{item.profiles?.payment_method || "DANA"} - {item.profiles?.account_number || "-"}</span>
+                            <p className="text-slate-400 text-[10px]">a/n {item.profiles?.account_name || "-"}</p>
+                          </div>
+                        </td>
+                        <td className="p-4">
                           <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${isWithdraw ? "bg-rose-50 text-rose-600 border border-rose-100" : "bg-emerald-50 text-emerald-600 border border-emerald-100"}`}>
-                            {isWithdraw ? "🔴 PENARIKAN (WITHDRAW)" : "🟢 DEPOSIT UTAMA"}
+                            {isWithdraw ? "🔴 WITHDRAW" : "🟢 DEPOSIT UTAMA"}
                           </span>
                         </td>
                         <td className="p-4 font-extrabold text-sm text-slate-900">
@@ -272,8 +298,8 @@ export default function AdminPanelPage() {
             </table>
           </div>
 
-          {/* TAMPILAN ANDROID MOBILE: Susunan Card Stacked Responsif */}
-          <div className="block md:hidden p-3 space-y-3">
+          {/* TAMPILAN IPHONE MOBILE: Fluid, Rapi, Tanpa Wadah Pembungkus Ganda (Anti-Cut) */}
+          <div className="block md:hidden space-y-4">
             {loading ? (
               <div className="p-6 text-center text-slate-400 animate-pulse">Memuat data...</div>
             ) : transactions.length === 0 ? (
@@ -282,43 +308,66 @@ export default function AdminPanelPage() {
               transactions.map((item) => {
                 const isWithdraw = item.type?.trim().toLowerCase() === "withdraw";
                 return (
-                  <div key={item.id} className="bg-white border border-slate-200 p-4 rounded-2xl shadow-xs space-y-2.5">
-                    <div className="flex justify-between items-start border-b border-slate-100 pb-2">
-                      <div>
-                        <p className="font-bold text-slate-800 uppercase text-xs">{item.profiles?.full_name || "Tanpa Nama"}</p>
-                        <p className="text-slate-400 text-[10px] font-normal">{item.profiles?.email}</p>
+                  <div key={item.id} className="bg-white border border-slate-100 p-4 rounded-3xl shadow-sm space-y-3 w-full box-border">
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-extrabold text-slate-900 uppercase text-xs truncate">{item.profiles?.full_name || "Investor"}</p>
+                        <p className="text-slate-400 text-[10px] font-medium truncate lowercase">{item.profiles?.email}</p>
                       </div>
-                      <span className={`px-2 py-0.5 rounded-full font-bold text-[9px] ${
-                        item.status === "approved" ? "bg-green-50 text-green-600" : item.status === "rejected" ? "bg-red-50 text-red-600" : "bg-yellow-50 text-yellow-600"
+                      <span className={`px-2 py-0.5 rounded-md font-black text-[9px] tracking-wider shrink-0 border ${
+                        item.status === "approved" ? "bg-green-50 text-green-600 border-green-100" : 
+                        item.status === "rejected" ? "bg-red-50 text-red-600 border-red-100" : 
+                        "bg-amber-50 text-amber-600 border-amber-100"
                       }`}>{item.status?.toUpperCase()}</span>
                     </div>
 
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-400">Jenis & Bukti:</span>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded font-bold text-[9px] ${isWithdraw ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600"}`}>
+                    <div className="border-t border-slate-50"></div>
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px]">
+                      <div>
+                        <span className="text-slate-400 font-medium block">Jenis Transaksi:</span>
+                        <span className={`inline-block font-bold text-[9px] px-1.5 py-0.5 rounded mt-0.5 ${isWithdraw ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600"}`}>
                           {isWithdraw ? "WITHDRAW" : "DEPOSIT"}
                         </span>
-                        {item.proof_url && (
-                          <button onClick={() => setSelectedProofUrl(item.proof_url)} className="text-blue-500 font-bold bg-blue-50 px-2 py-0.5 rounded text-[10px]">
-                            Lihat Foto
+                      </div>
+                      <div className="text-right">
+                        <span className="text-slate-400 font-medium block">Bukti Transfer:</span>
+                        {item.proof_url ? (
+                          <button onClick={() => setSelectedProofUrl(item.proof_url)} className="text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 mt-0.5">
+                            <Eye className="h-3 w-3" /> Lihat Foto
                           </button>
+                        ) : (
+                          <span className="text-slate-400 italic text-[10px]">Tidak Ada</span>
                         )}
                       </div>
                     </div>
 
-                    <div className="flex justify-between items-center pt-1 border-t border-slate-50">
-                      <span className="text-slate-500 font-medium">Nominal Asset:</span>
+                    {/* KOTAK RENCANA INFO REKENING USER */}
+                    <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 flex items-start gap-2 text-[11px]">
+                      <CreditCard className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
+                      <div className="space-y-0.5 min-w-0 flex-1">
+                        <span className="text-slate-400 font-medium block text-[10px]">Info Rekening Penarikan / Transfer:</span>
+                        <p className="font-extrabold text-slate-800 tracking-wide truncate">
+                          {item.profiles?.payment_method || "DANA"} - {item.profiles?.account_number || "-"}
+                        </p>
+                        <p className="text-[10px] text-slate-500 font-medium truncate">
+                          a/n {item.profiles?.account_name || "-"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center bg-slate-50/50 rounded-2xl px-3 py-2">
+                      <span className="text-slate-500 font-semibold text-[11px]">Nominal Asset:</span>
                       <span className="font-black text-sm text-slate-900">Rp {item.amount.toLocaleString("id-ID")}</span>
                     </div>
 
                     {item.status === "pending" && (
-                      <div className="grid grid-cols-2 gap-2 pt-2">
-                        <button onClick={() => handleDecision(item, "approve")} className="bg-emerald-600 text-white font-bold py-2 rounded-xl text-center active:bg-emerald-700 flex items-center justify-center gap-1">
-                          <CheckCircle className="h-3 w-3" /> Setujui
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <button onClick={() => handleDecision(item, "approve")} className="bg-emerald-600 text-white font-bold py-2 rounded-xl text-center active:bg-emerald-700 flex items-center justify-center gap-1 transition-all">
+                          <CheckCircle className="h-3.5 w-3.5" /> Setujui
                         </button>
-                        <button onClick={() => handleDecision(item, "reject")} className="bg-rose-600 text-white font-bold py-2 rounded-xl text-center active:bg-rose-700 flex items-center justify-center gap-1">
-                          <XCircle className="h-3 w-3" /> Tolak
+                        <button onClick={() => handleDecision(item, "reject")} className="bg-rose-600 text-white font-bold py-2 rounded-xl text-center active:bg-rose-700 flex items-center justify-center gap-1 transition-all">
+                          <XCircle className="h-3.5 w-3.5" /> Tolak
                         </button>
                       </div>
                     )}
@@ -327,7 +376,6 @@ export default function AdminPanelPage() {
               })
             )}
           </div>
-
         </div>
       )}
 
@@ -387,7 +435,7 @@ export default function AdminPanelPage() {
             <div className="bg-slate-50 p-2 rounded-xl border border-slate-200 max-h-[60vh] overflow-hidden flex items-center justify-center">
               <img 
                 src={selectedProofUrl} 
-                alt="Bukti Transfer Unggulan" 
+                alt="Bukti Transfer" 
                 className="max-w-full max-h-[50vh] object-contain rounded-lg"
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = "https://placehold.co/400x500?text=Bukti+Gagal+Dimuat";
