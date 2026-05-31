@@ -94,6 +94,10 @@ export default function ProfilPage() {
       if (updateError) throw updateError;
 
       setAvatarUrl(publicUrl);
+
+      // MEMICU SINKRONISASI REAL-TIME KE NAVBAR KANAN ATAS
+      window.dispatchEvent(new Event("profile-updated"));
+
       alert("Foto profil berhasil diperbarui!");
     } catch (error: any) {
       console.error(error);
@@ -120,6 +124,10 @@ export default function ProfilPage() {
       if (error) throw error;
 
       setAvatarUrl(null);
+
+      // MEMICU SINKRONISASI REAL-TIME KE NAVBAR KANAN ATAS
+      window.dispatchEvent(new Event("profile-updated"));
+
       alert("Foto profil berhasil dihapus!");
     } catch (error: any) {
       alert("Gagal menghapus foto profil: " + error.message);
@@ -147,6 +155,10 @@ export default function ProfilPage() {
       });
 
       if (error) throw error;
+
+      // MEMICU SINKRONISASI REAL-TIME KE NAVBAR KANAN ATAS (JIKA NAMA BERUBAH)
+      window.dispatchEvent(new Event("profile-updated"));
+
       alert("Profil dan Data Rekening Sukses Diperbarui!");
     } catch (err: any) {
       alert("Gagal memperbarui profil: " + err.message);
@@ -189,7 +201,7 @@ export default function ProfilPage() {
               </div>
             )}
           </div>
-          <h4 className="text-sm font-bold text-slate-800 uppercase tracking-tight">{fullName || "MEMBER AURORA"}</h4>
+          <h4 className="text-sm font-bold text-slate-800 uppercase tracking-tight">{fullName || "INVESTOR AURORA"}</h4>
           <p className="text-[11px] text-slate-400 font-medium mb-5 lowercase">{emailUser}</p>
           
           {/* GRUP CONTAINER TOMBOL FOTO PROFIL */}

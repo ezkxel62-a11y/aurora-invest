@@ -23,7 +23,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         const { data: { session } } = await supabase.auth.getSession();
         
         // JIKA TIDAK LOGIN: Tendang langsung ke halaman utama/login
-        // Catatan: Ubah "/login" menjadi "/" jika halaman login Anda berada di root utama
         if (!session) {
           router.push("/"); 
           return;
@@ -49,6 +48,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
     
     checkAuthAndFetchProfile();
+
+    // FITUR SINKRONISASI OTOMATIS (Mendengarkan sinyal perubahan dari halaman profil)
+    async function handleProfileUpdate() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .single();
+        if (data) {
+          setProfile(data); // Sinkronkan data nama & avatar terbaru secara instan
+        }
+      }
+    }
+
+    window.addEventListener("profile-updated", handleProfileUpdate);
+    
+    return () => {
+      window.removeEventListener("profile-updated", handleProfileUpdate);
+    };
   }, [router]);
 
   const handleLogout = async () => {
@@ -63,6 +83,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: "Riwayat", href: "/dashboard/riwayat", icon: History },
     { name: "Profil", href: "/dashboard/profil", icon: User },
   ];
+
+  // Fungsi pembuat inisial nama jika foto belum diunggah
+  const getInitials = (name: string) => {
+    if (!name) return "AU";
+    return name.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase();
+  };
 
   // LAYAR LOADING PROTEKSI (Mencegah kebocoran UI sebelum cek login selesai)
   if (loading) {
@@ -113,8 +139,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="relative">
             <button onClick={() => setIsDropdownOpen(!isDropdownOpen)} className="flex items-center gap-2 bg-slate-50 border border-slate-200/60 rounded-full py-1.5 pl-3 pr-1.5 hover:bg-slate-100 transition-all">
               <span className="text-xs font-semibold text-slate-700">{profile?.full_name || profile?.name || "User"}</span>
-              <div className="h-7 w-7 bg-blue-600 rounded-full flex items-center justify-center text-xs font-bold text-white uppercase shadow-sm">
-                {(profile?.full_name || profile?.name || "AU").substring(0, 2)}
+              <div className="h-7 w-7 bg-blue-600 rounded-full flex items-center justify-center text-xs font-bold text-white uppercase shadow-sm overflow-hidden relative">
+                {profile?.avatar_url ? (
+                  <img src={profile.avatar_url} alt="Nav Profil" className="w-full h-full object-cover" />
+                ) : (
+                  getInitials(profile?.full_name || profile?.name || "AU")
+                )}
               </div>
             </button>
             {isDropdownOpen && (
