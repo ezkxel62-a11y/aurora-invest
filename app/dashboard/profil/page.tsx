@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
-import { Save, Upload } from "lucide-react";
+import { Save, Upload, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 export default function ProfilPage() {
@@ -76,7 +76,9 @@ export default function ProfilPage() {
         .from("investasi")
         .upload(filePath, file, { cacheControl: "3600", upsert: true });
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        throw new Error(uploadError.message + ". Pastikan Anda sudah membuat bucket bernama 'investasi' dengan akses Public di Supabase Storage.");
+      }
 
       // 2. Dapatkan tautan URL publik dari gambar yang berhasil disimpan
       const { data: { publicUrl } } = supabase.storage
@@ -95,9 +97,32 @@ export default function ProfilPage() {
       alert("Foto profil berhasil diperbarui!");
     } catch (error: any) {
       console.error(error);
-      alert("Gagal mengunggah foto: " + (error.message || "Pastikan setelan Bucket Storage 'investasi' Anda publik."));
+      alert("Gagal mengunggah foto: " + error.message);
     } finally {
       setUploading(false);
+    }
+  };
+
+  // Fungsi menghapus tautan foto profil (Rollback ke inisial nama)
+  const handleDeleteAvatar = async () => {
+    if (!confirm("Apakah Anda yakin ingin menghapus foto profil saat ini?")) return;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Putus tautan gambar pada row profil user di database
+      const { error } = await supabase
+        .from("profiles")
+        .update({ avatar_url: null })
+        .eq("id", user.id);
+
+      if (error) throw error;
+
+      setAvatarUrl(null);
+      alert("Foto profil berhasil dihapus!");
+    } catch (error: any) {
+      alert("Gagal menghapus foto profil: " + error.message);
     }
   };
 
@@ -167,14 +192,28 @@ export default function ProfilPage() {
           <h4 className="text-sm font-bold text-slate-800 uppercase tracking-tight">{fullName || "MEMBER AURORA"}</h4>
           <p className="text-[11px] text-slate-400 font-medium mb-5 lowercase">{emailUser}</p>
           
-          <button 
-            type="button" 
-            onClick={handleTriggerUpload}
-            disabled={uploading}
-            className="w-full bg-white hover:bg-slate-50 text-slate-600 text-xs font-semibold py-2 px-4 border border-slate-200 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm disabled:bg-slate-100 disabled:cursor-not-allowed"
-          >
-            <Upload className="h-3.5 w-3.5" /> {uploading ? "Mengunggah..." : "Ganti Foto"}
-          </button>
+          {/* GRUP CONTAINER TOMBOL FOTO PROFIL */}
+          <div className="w-full space-y-2">
+            <button 
+              type="button" 
+              onClick={handleTriggerUpload}
+              disabled={uploading}
+              className="w-full bg-white hover:bg-slate-50 text-slate-600 text-xs font-semibold py-2 px-4 border border-slate-200 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm disabled:bg-slate-100 disabled:cursor-not-allowed"
+            >
+              <Upload className="h-3.5 w-3.5" /> {uploading ? "Mengunggah..." : "Ganti Foto"}
+            </button>
+
+            {avatarUrl && (
+              <button 
+                type="button" 
+                onClick={handleDeleteAvatar}
+                disabled={uploading}
+                className="w-full bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold py-2 px-4 border border-red-100 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Hapus Foto
+              </button>
+            )}
+          </div>
         </div>
 
         {/* BLOK KANAN: FORM ISIAN LENGKAP */}
