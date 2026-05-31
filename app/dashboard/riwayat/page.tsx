@@ -13,11 +13,17 @@ export default function RiwayatPage() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        const { data, error } = await supabase.from("deposits").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+        // Fetch data
+        const { data, error } = await supabase
+          .from("deposits")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false });
+
         if (error) throw error;
         setTransactions(data || []);
       } catch (error: any) {
-        console.error(error.message);
+        console.error("Error fetching riwayat:", error.message);
       } finally {
         setLoading(false);
       }
@@ -25,9 +31,11 @@ export default function RiwayatPage() {
     fetchRiwayat();
   }, []);
 
+  // PERBAIKAN: Gunakan huruf KAPITAL sesuai data di Supabase
   const renderStatusBadge = (status: string) => {
-    if (status === "approved") return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">Disetujui</span>;
-    if (status === "rejected") return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-600 border border-rose-200">Ditolak</span>;
+    const s = status?.toUpperCase(); // Pastikan selalu uppercase
+    if (s === "APPROVED") return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">Disetujui</span>;
+    if (s === "REJECTED") return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-600 border border-rose-200">Ditolak</span>;
     return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">Pending</span>;
   };
 
@@ -41,7 +49,9 @@ export default function RiwayatPage() {
         
         <div className="mt-6 divide-y divide-slate-100">
           {transactions.map((item) => {
-            const isDeposit = item.type === "deposit";
+            // Pastikan pengecekan tipe ini juga sesuai dengan isi database (misal: 'DEPOSIT' atau 'deposit')
+            const isDeposit = item.type?.toLowerCase() === "deposit";
+            
             return (
               <div key={item.id} className="flex justify-between items-center py-4">
                 <div className="flex items-center gap-3">
