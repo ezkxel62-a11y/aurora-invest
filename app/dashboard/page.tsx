@@ -19,12 +19,12 @@ export default function BerandaPage() {
   const [loading, setLoading] = useState(true);
   const [currentSlide, setCurrentSlide] = useState(0);
 
-  // Konfigurasi 4 Banner JPEG dari Folder Public dengan Lapisan Informasi Tekstual
+  // Menggunakan 4 file JPEG murni dari folder public
   const bannerSlides = [
-    { src: "/banner1.jpeg", title: "Mulai Investasi Pintar Bersama Aurora", desc: "Nikmati bagi hasil keuntungan berlipat ganda langsung masuk ke dompet digital Anda." },
-    { src: "/banner2.jpeg", title: "Keamanan Aset Manajemen Terjamin", desc: "Seluruh instrumen portofolio dipantau secara real-time oleh tim analis professional." },
-    { src: "/banner3.jpeg", title: "Program Prioritas Aurora Platinum", desc: "Dapatkan imbal hasil eksklusif hingga ratusan juta rupiah khusus mitra VIP." },
-    { src: "/banner4.jpeg", title: "Fleksibilitas Transaksi Digital Terenkripsi", desc: "Proses deposit cepat menggunakan QRIS otomatis terintegrasi sistem pengaman." }
+    { src: "/banner1.jpeg", alt: "Aurora Banner 1" },
+    { src: "/banner2.jpeg", alt: "Aurora Banner 2" },
+    { src: "/banner3.jpeg", alt: "Aurora Banner 3" },
+    { src: "/banner4.jpeg", alt: "Aurora Banner 4" }
   ];
 
   const loadData = async () => {
@@ -83,7 +83,7 @@ export default function BerandaPage() {
         .eq("id", userId);
 
       if (balanceErr) {
-        // Rollback: Hapus paket investasi jika pemotongan saldo gagal di tengah jalan
+        // Rollback jika terjadi kegagalan pemotongan saldo di tengah jalan
         await supabase.from("investments").delete().eq("user_id", userId).eq("package_name", pkg.name).eq("status", "active").order("created_at", { ascending: false }).limit(1);
         throw balanceErr;
       }
@@ -104,31 +104,31 @@ export default function BerandaPage() {
   return (
     <div className="p-2 space-y-6 max-w-6xl mx-auto text-xs text-slate-700 font-sans">
       
-      {/* HERO BANNER CAROUSEL DENGAN FITUR AUTO-SWIPE & REAL IMAGES */}
-      <div className="relative rounded-3xl overflow-hidden h-[160px] sm:h-[220px] md:h-[280px] shadow-sm group bg-slate-950">
+      {/* HERO BANNER CAROUSEL - ULTRA RESPONSIF TANPA TEKS OVERLAP */}
+      <div className="relative rounded-3xl overflow-hidden w-full aspect-[2.3/1] sm:aspect-[2.6/1] md:aspect-[3/1] shadow-sm group bg-slate-950">
         
-        {/* Render Gambar JPEG Berdasarkan Slide Aktif */}
+        {/* Render Gambar Utama Slide */}
         <div className="w-full h-full relative">
           <img 
             src={bannerSlides[currentSlide].src} 
-            alt={bannerSlides[currentSlide].title} 
+            alt={bannerSlides[currentSlide].alt} 
             className="w-full h-full object-cover object-center transition-all duration-700 ease-in-out"
           />
-          {/* Overlay Linear Gradient agar Teks Selalu Kontras & Terbaca Jelas */}
-          <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent p-6 md:p-10 flex flex-col justify-center text-white">
-            <h2 className="text-base font-black tracking-wide md:text-xl lg:text-2xl">{bannerSlides[currentSlide].title}</h2>
-            <p className="text-slate-200 mt-1 max-w-xl text-[10px] sm:text-[11px] md:text-xs leading-relaxed opacity-90">{bannerSlides[currentSlide].desc}</p>
-          </div>
         </div>
         
         {/* Tombol Navigasi Manual Banner */}
         <button onClick={prevSlide} className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/30 hover:bg-black/60 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10"><ChevronLeft className="h-4 w-4" /></button>
         <button onClick={nextSlide} className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/30 hover:bg-black/60 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10"><ChevronRight className="h-4 w-4" /></button>
 
-        {/* Indikator Titik Banner */}
+        {/* Indikator Titik Posisi Banner */}
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10 bg-black/20 backdrop-blur-sm px-2.5 py-1 rounded-full">
           {bannerSlides.map((_, idx) => (
-            <div key={idx} className={`h-1.5 rounded-full transition-all duration-300 ${currentSlide === idx ? "w-4 bg-white" : "w-1.5 bg-white/40"}`} />
+            <button
+              key={idx}
+              onClick={() => setCurrentSlide(idx)}
+              className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${currentSlide === idx ? "w-4 bg-white" : "w-1.5 bg-white/40"}`}
+              aria-label={`Go to slide ${idx + 1}`}
+            />
           ))}
         </div>
       </div>
