@@ -1,8 +1,8 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { CheckCircle, XCircle, RefreshCw, Eye, Users, FileText, CreditCard } from "lucide-react";
+import { CheckCircle, XCircle, RefreshCw, Eye, Users, FileText, CreditCard, Volume2, VolumeX } from "lucide-react";
 
 export default function AdminPanelPage() {
   const router = useRouter();
@@ -18,6 +18,10 @@ export default function AdminPanelPage() {
   const [loading, setLoading] = useState(true);
   const [loadingInvestors, setLoadingInvestors] = useState(true);
   
+  // State Proteksi & Penjaga Audio untuk iPhone / PWA iOS
+  const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
   // State Modal Preview Bukti Transfer
   const [selectedProofUrl, setSelectedProofUrl] = useState<string | null>(null);
 
@@ -54,7 +58,7 @@ export default function AdminPanelPage() {
     }
   };
 
-  // Gerbang Keamanan Utama & Inisialisasi Realtime Listener
+  // Gerbang Keamanan Utama
   useEffect(() => {
     const checkAdminAccess = async () => {
       try {
@@ -90,20 +94,52 @@ export default function AdminPanelPage() {
     checkAdminAccess();
   }, [router]);
 
-  // Efek Realtime Listener untuk Mendeteksi Transaksi Baru Masuk
+  // Efek Realtime Listener & Mekanisme Bypass Keamanan Suara iOS Safari
   useEffect(() => {
     if (!authorized) return;
 
-    // Berlangganan ke tabel 'deposits' secara realtime
+    // 1. Inisialisasi Audio Objek Tunggal agar bisa di-bypass oleh Safari iOS
+    audioRef.current = new Audio("/ping.mp3");
+    audioRef.current.load();
+
+    // 2. Fungsi Pembuka Kunci Otomatis (Membuka batasan senyap Apple Autoplay)
+    const unlockAudio = () => {
+      if (audioRef.current) {
+        audioRef.current.play()
+          .then(() => {
+            // Putar milidetik awal lalu jeda instan untuk memancing izin dari browser Safari
+            audioRef.current!.pause();
+            audioRef.current!.currentTime = 0;
+            setIsAudioUnlocked(true);
+            console.log("Audio Engine Berhasil Diaktifkan di iPhone PWA");
+          })
+          .catch((err) => {
+            console.error("Gagal mendapatkan otoritas Audio:", err);
+          });
+        
+        // Bersihkan pendengar event setelah sistem sukses terbuka sekali
+        document.removeEventListener("click", unlockAudio);
+        document.removeEventListener("touchstart", unlockAudio);
+      }
+    };
+
+    // Daftarkan aksi sentuhan fisik pertama user pada layar iPhone untuk memicu izin audio
+    document.addEventListener("click", unlockAudio);
+    document.addEventListener("touchstart", unlockAudio);
+
+    // 3. Berlangganan ke tabel 'deposits' secara realtime
     const channel = supabase
       .channel("realtime-admin-deposits")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "deposits" },
         () => {
-          // Mainkan audio notifikasi ketika ada investor mengajukan deposit/withdraw baru
-          const audio = new Audio("/ping.mp3");
-          audio.play().catch((err) => console.log("Pemutaran suara menunggu ketukan layar pertama user:", err));
+          // Bunyikan file audio yang instansinya sudah di-unlock sebelumnya
+          if (audioRef.current) {
+            audioRef.current.play().catch((err) => {
+              console.log("Suara terhambat sistem proteksi internal:", err);
+            });
+          }
           
           // Segarkan list data otomatis
           fetchTransactions();
@@ -113,6 +149,8 @@ export default function AdminPanelPage() {
 
     return () => {
       supabase.removeChannel(channel);
+      document.removeEventListener("click", unlockAudio);
+      document.removeEventListener("touchstart", unlockAudio);
     };
   }, [authorized]);
 
@@ -181,12 +219,20 @@ export default function AdminPanelPage() {
           <h2 className="text-base md:text-lg font-black text-slate-900 tracking-tight">🛡️ Control Panel Admin Aurora</h2>
           <p className="text-slate-400 text-[11px] mt-0.5">Sistem sinkronisasi saldo investasi dan database investor.</p>
         </div>
-        <button 
-          onClick={handleRefresh} 
-          className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-white border border-slate-200 px-4 py-2.5 rounded-xl font-bold text-slate-800 shadow-sm hover:bg-slate-100 transition active:scale-95"
-        >
-          <RefreshCw className="h-3.5 w-3.5 text-slate-500" /> Refresh Data
-        </button>
+        
+        {/* Kontrol Fleksibel Indikator Audio Proteksi iOS & Tombol Refresh */}
+        <div className="w-full sm:w-auto flex flex-col sm:flex-row sm:items-center gap-2">
+          <div className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-bold border ${isAudioUnlocked ? "bg-green-50 text-green-600 border-green-200" : "bg-amber-50 text-amber-600 border-amber-200"}`}>
+            {isAudioUnlocked ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+            {isAudioUnlocked ? "Notif Suara Aktif" : "Ketuk Layar HP Untuk Aktifkan Suara"}
+          </div>
+          <button 
+            onClick={handleRefresh} 
+            className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-white border border-slate-200 px-4 py-2.5 rounded-xl font-bold text-slate-800 shadow-sm hover:bg-slate-100 transition active:scale-95"
+          >
+            <RefreshCw className="h-3.5 w-3.5 text-slate-500" /> Refresh Data
+          </button>
+        </div>
       </div>
 
       {/* Tab Navigasi - Responsif */}
@@ -298,7 +344,7 @@ export default function AdminPanelPage() {
             </table>
           </div>
 
-          {/* TAMPILAN IPHONE MOBILE: Fluid, Rapi, Tanpa Wadah Pembungkus Ganda (Anti-Cut) */}
+          {/* TAMPILAN IPHONE MOBILE: Fluid, Rapi, Sesuai Gambar WhatsApp Image 2026-06-01 at 01.26.05.jpeg */}
           <div className="block md:hidden space-y-4">
             {loading ? (
               <div className="p-6 text-center text-slate-400 animate-pulse">Memuat data...</div>
@@ -342,7 +388,7 @@ export default function AdminPanelPage() {
                       </div>
                     </div>
 
-                    {/* KOTAK RENCANA INFO REKENING USER */}
+                    {/* KOTAK INFORMASI DETAIL DATA REKENING USER (TERINTEGRASI SINKRON) */}
                     <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 flex items-start gap-2 text-[11px]">
                       <CreditCard className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
                       <div className="space-y-0.5 min-w-0 flex-1">
