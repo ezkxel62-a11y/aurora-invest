@@ -94,7 +94,7 @@ export default function AdminPanelPage() {
     checkAdminAccess();
   }, [router]);
 
-  // Efek Realtime Listener & Mekanisme Bypass Keamanan Suara iOS Safari (Menggunakan Synthesizer Internal Hardware)
+  // Efek Realtime Listener & Mekanisme Bypass Keamanan Suara iOS Safari + Auto Reconnect PWA
   useEffect(() => {
     if (!authorized) return;
 
@@ -103,13 +103,13 @@ export default function AdminPanelPage() {
     const audioCtx = new AudioContextClass();
     audioContextRef.current = audioCtx;
 
-    // 2. Fungsi Pembuat Suara "Ding-Dong" Elektronik Langsung dari Hardware HP (Tanpa File MP3)
+    // 2. Fungsi Pembuat Suara "Ding-Dong" Elektronik Langsung dari Hardware HP
     const playSyntheticNotification = () => {
       if (!audioCtx) return;
       
       // Paksa bangunkan audio engine jika ditidurkan secara sepihak oleh sistem iOS
       if (audioCtx.state === "suspended") {
-        audioCtx.resume();
+        audioCtx.resume().catch((e) => console.log("Gagal membangunkan audio:", e));
       }
 
       const osc = audioCtx.createOscillator();
@@ -117,7 +117,7 @@ export default function AdminPanelPage() {
 
       osc.type = "sine"; // Gelombang sinus jernih berbentuk lonceng
       
-      // Efek nada ganda (Ding-Dong) yang nyaring
+      // Efek nada ganda (Ding-Dong) yang nyaring di speaker HP
       osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // Nada pertama (D5)
       osc.frequency.setValueAtTime(880.00, audioCtx.currentTime + 0.1); // Nada kedua lebih tinggi (A5)
 
@@ -138,47 +138,90 @@ export default function AdminPanelPage() {
         audioCtx.resume().then(() => {
           playSyntheticNotification(); // Pemicu wajib agar iOS menyetujui hak akses audio
           setIsAudioUnlocked(true);
-          console.log("Audio Engine internal iPhone berhasil di-unlock.");
         });
       } else {
         playSyntheticNotification();
         setIsAudioUnlocked(true);
       }
-      
-      // Bersihkan event listener agar tidak memicu suara di setiap ketukan berikutnya
-      document.removeEventListener("click", unlockAudio);
-      document.removeEventListener("touchstart", unlockAudio);
     };
 
     // Daftarkan aksi sentuhan fisik pertama user pada layar iPhone untuk memicu izin audio
     document.addEventListener("click", unlockAudio);
     document.addEventListener("touchstart", unlockAudio);
 
-    // 4. Berlangganan ke tabel 'deposits' secara realtime
-    const channel = supabase
-      .channel("realtime-admin-deposits")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "deposits" },
-        () => {
-          // Putar sinyal suara sintetis langsung melalui hardware internal ponsel
-          playSyntheticNotification();
-          
-          // Segarkan list data otomatis
-          fetchTransactions();
-        }
-      )
-      .subscribe();
+    // 4. Manajemen Jalur Jaringan Realtime Supabase dengan Fitur Auto-Reconnect
+    let channel: any = null;
+
+    const startRealtimeSubscription = () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+
+      channel = supabase
+        .channel("realtime-admin-deposits")
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "deposits" },
+          (payload) => {
+            console.log("Transaksi Masuk Terdeteksi:", payload);
+            playSyntheticNotification(); // Putar sinyal suara sintetis langsung melalui hardware internal ponsel
+            fetchTransactions(); // Segarkan list data otomatis tanpa klik refresh
+          }
+        )
+        .subscribe();
+    };
+
+    // Jalankan subskripsi saat halaman dimuat pertama kali
+    startRealtimeSubscription();
+
+    // Solusi Utama iOS PWA: Sinkronisasi ulang otomatis saat aplikasi dibuka kembali (dari background/setelah idle)
+    const handlePWAResume = () => {
+      console.log("PWA Mendapat Otoritas Fokus Kembali, Memperbarui Koneksi Jaringan & Audio...");
+      if (audioCtx && audioCtx.state === "suspended") {
+        audioCtx.resume().catch((e) => console.log(e));
+      }
+      startRealtimeSubscription(); // Pasang ulang WebSocket yang terputus oleh iOS
+      fetchTransactions(); // Tarik data terbaru untuk mengamankan data yang masuk saat idle
+    };
+
+    window.addEventListener("focus", handlePWAResume);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        handlePWAResume();
+      }
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
       document.removeEventListener("click", unlockAudio);
       document.removeEventListener("touchstart", unlockAudio);
+      window.removeEventListener("focus", handlePWAResume);
       if (audioContextRef.current) {
         audioContextRef.current.close();
       }
     };
   }, [authorized]);
+
+  // Fungsi untuk memicu tes suara mandiri sekaligus memaksa mengaktifkan AudioContext jika tertidur
+  const triggerManualSoundTest = () => {
+    if (audioContextRef.current) {
+      const ctx = audioContextRef.current;
+      if (ctx.state === "suspended") {
+        ctx.resume();
+      }
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(783.99, ctx.currentTime); // Nada G5 tinggi yang nyaring
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.2);
+      setIsAudioUnlocked(true);
+    }
+  };
 
   // Eksekusi keputusan persetujuan/penolakan
   const handleDecision = async (item: any, action: "approve" | "reject") => {
@@ -248,10 +291,15 @@ export default function AdminPanelPage() {
         
         {/* Kontrol Fleksibel Indikator Audio Proteksi iOS & Tombol Refresh */}
         <div className="w-full sm:w-auto flex flex-col sm:flex-row sm:items-center gap-2">
-          <div className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-bold border ${isAudioUnlocked ? "bg-green-50 text-green-600 border-green-200" : "bg-amber-50 text-amber-600 border-amber-200"}`}>
+          <button 
+            onClick={triggerManualSoundTest}
+            className={`w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[10px] font-black border transition active:scale-95 cursor-pointer ${
+              isAudioUnlocked ? "bg-green-50 text-green-600 border-green-200" : "bg-amber-50 text-amber-600 border-amber-200 animate-pulse"
+            }`}
+          >
             {isAudioUnlocked ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
-            {isAudioUnlocked ? "Notif Suara Aktif" : "Ketuk Layar HP Untuk Aktifkan Suara"}
-          </div>
+            {isAudioUnlocked ? "🔊 Notif Suara Aktif (Ketuk untuk Tes)" : "⚡ Ketuk Layar HP Untuk Aktifkan Suara"}
+          </button>
           <button 
             onClick={handleRefresh} 
             className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-white border border-slate-200 px-4 py-2.5 rounded-xl font-bold text-slate-800 shadow-sm hover:bg-slate-100 transition active:scale-95"
