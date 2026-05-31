@@ -18,9 +18,10 @@ export default function AdminPanelPage() {
   const [loading, setLoading] = useState(true);
   const [loadingInvestors, setLoadingInvestors] = useState(true);
   
-  // State Proteksi & Penjaga Audio untuk iPhone / PWA iOS
+  // State Proteksi & Engine Web Audio API khusus untuk iPhone / PWA iOS
   const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioBufferRef = useRef<AudioBuffer | null>(null);
 
   // State Modal Preview Bukti Transfer
   const [selectedProofUrl, setSelectedProofUrl] = useState<string | null>(null);
@@ -94,32 +95,34 @@ export default function AdminPanelPage() {
     checkAdminAccess();
   }, [router]);
 
-  // Efek Realtime Listener & Mekanisme Bypass Keamanan Suara iOS Safari
+  // Efek Realtime Listener & Mekanisme Bypass Keamanan Suara iOS Safari dengan Web Audio API
   useEffect(() => {
     if (!authorized) return;
 
-    // 1. Inisialisasi Audio Objek Tunggal agar bisa di-bypass oleh Safari iOS
-    audioRef.current = new Audio("/ping.mp3");
-    audioRef.current.load();
+    // 1. Inisialisasi AudioContext (Mendukung browser Safari lama & baru)
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    const audioCtx = new AudioContextClass();
+    audioContextRef.current = audioCtx;
 
-    // 2. Fungsi Pembuka Kunci Otomatis (Membuka batasan senyap Apple Autoplay)
+    // 2. Unduh berkas suara dan simpan langsung ke dalam RAM sistem ponsel
+    fetch("/ping.mp3")
+      .then((res) => res.arrayBuffer())
+      .then((buffer) => audioCtx.decodeAudioData(buffer))
+      .then((decodedData) => {
+        audioBufferRef.current = decodedData;
+        console.log("Audio Buffer terenkripsi siap digunakan.");
+      })
+      .catch((err) => console.error("Gagal memuat berkas audio:", err));
+
+    // 3. Fungsi Pembuka Kunci Otomatis (Membuka batasan senyap Apple Autoplay)
     const unlockAudio = () => {
-      if (audioRef.current) {
-        audioRef.current.play()
-          .then(() => {
-            // Putar milidetik awal lalu jeda instan untuk memancing izin dari browser Safari
-            audioRef.current!.pause();
-            audioRef.current!.currentTime = 0;
-            setIsAudioUnlocked(true);
-            console.log("Audio Engine Berhasil Diaktifkan di iPhone PWA");
-          })
-          .catch((err) => {
-            console.error("Gagal mendapatkan otoritas Audio:", err);
-          });
-        
-        // Bersihkan pendengar event setelah sistem sukses terbuka sekali
-        document.removeEventListener("click", unlockAudio);
-        document.removeEventListener("touchstart", unlockAudio);
+      if (audioCtx.state === "suspended") {
+        audioCtx.resume().then(() => {
+          setIsAudioUnlocked(true);
+          console.log("Audio Engine Berhasil Diaktifkan di iPhone PWA");
+        });
+      } else if (audioCtx.state === "running") {
+        setIsAudioUnlocked(true);
       }
     };
 
@@ -127,18 +130,20 @@ export default function AdminPanelPage() {
     document.addEventListener("click", unlockAudio);
     document.addEventListener("touchstart", unlockAudio);
 
-    // 3. Berlangganan ke tabel 'deposits' secara realtime
+    // 4. Berlangganan ke tabel 'deposits' secara realtime
     const channel = supabase
       .channel("realtime-admin-deposits")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "deposits" },
         () => {
-          // Bunyikan file audio yang instansinya sudah di-unlock sebelumnya
-          if (audioRef.current) {
-            audioRef.current.play().catch((err) => {
-              console.log("Suara terhambat sistem proteksi internal:", err);
-            });
+          // Putar audio langsung dari RAM buffer (Tembus blokade background task iOS)
+          if (audioContextRef.current && audioBufferRef.current) {
+            const ctx = audioContextRef.current;
+            const source = ctx.createBufferSource();
+            source.buffer = audioBufferRef.current;
+            source.connect(ctx.destination);
+            source.start(0);
           }
           
           // Segarkan list data otomatis
@@ -151,6 +156,9 @@ export default function AdminPanelPage() {
       supabase.removeChannel(channel);
       document.removeEventListener("click", unlockAudio);
       document.removeEventListener("touchstart", unlockAudio);
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
     };
   }, [authorized]);
 
@@ -344,7 +352,7 @@ export default function AdminPanelPage() {
             </table>
           </div>
 
-          {/* TAMPILAN IPHONE MOBILE: Fluid, Rapi, Sesuai Gambar WhatsApp Image 2026-06-01 at 01.26.05.jpeg */}
+          {/* TAMPILAN IPHONE MOBILE: Fluid & Rapi */}
           <div className="block md:hidden space-y-4">
             {loading ? (
               <div className="p-6 text-center text-slate-400 animate-pulse">Memuat data...</div>
