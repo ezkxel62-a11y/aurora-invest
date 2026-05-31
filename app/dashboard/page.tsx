@@ -19,11 +19,12 @@ export default function BerandaPage() {
   const [loading, setLoading] = useState(true);
   const [currentSlide, setCurrentSlide] = useState(0);
 
-  // Silakan ganti string background warna di bawah ini dengan URL Gambar Pribadi Anda nanti
+  // Konfigurasi 4 Banner JPEG dari Folder Public dengan Lapisan Informasi Tekstual
   const bannerSlides = [
-    { title: "Mulai Investasi Pintar Bersama Aurora", desc: "Nikmati bagi hasil keuntungan berlipat ganda langsung masuk ke dompet digital Anda.", bg: "bg-gradient-to-r from-blue-900 to-indigo-950" },
-    { title: "Keamanan Aset Manajemen Terjamin", desc: "Seluruh instrumen portofolio dipantau secara real-time oleh tim analis professional.", bg: "bg-gradient-to-r from-purple-900 to-slate-950" },
-    { title: "Program Prioritas Aurora Platinum", desc: "Dapatkan imbal hasil eksklusif hingga ratusan juta rupiah khusus mitra VIP.", bg: "bg-gradient-to-r from-emerald-900 to-blue-950" }
+    { src: "/banner1.jpeg", title: "Mulai Investasi Pintar Bersama Aurora", desc: "Nikmati bagi hasil keuntungan berlipat ganda langsung masuk ke dompet digital Anda." },
+    { src: "/banner2.jpeg", title: "Keamanan Aset Manajemen Terjamin", desc: "Seluruh instrumen portofolio dipantau secara real-time oleh tim analis professional." },
+    { src: "/banner3.jpeg", title: "Program Prioritas Aurora Platinum", desc: "Dapatkan imbal hasil eksklusif hingga ratusan juta rupiah khusus mitra VIP." },
+    { src: "/banner4.jpeg", title: "Fleksibilitas Transaksi Digital Terenkripsi", desc: "Proses deposit cepat menggunakan QRIS otomatis terintegrasi sistem pengaman." }
   ];
 
   const loadData = async () => {
@@ -60,14 +61,13 @@ export default function BerandaPage() {
       expirationDate.setDate(expirationDate.getDate() + pkg.duration);
 
       // Amankan pemotongan: Daftarkan paket investasi terlebih dahulu
-      // Mengirimkan SEMUA variasi nama kolom agar lolos dari segala jenis validasi NOT NULL di database
       const { error: invErr } = await supabase.from("investments").insert({
         user_id: userId,
         package_name: pkg.name,
         amount: pkg.price,
-        amount_invested: pkg.price,          // Antitesis error kolom amount
+        amount_invested: pkg.price,          
         total_profit: pkg.profit,
-        total_return: pkg.price + pkg.profit, // FIX: Mengisi kolom total_return (Modal + Profit)
+        total_return: pkg.price + pkg.profit, 
         duration_days: pkg.duration,
         status: "active",
         expires_at: expirationDate.toISOString(),
@@ -104,25 +104,36 @@ export default function BerandaPage() {
   return (
     <div className="p-2 space-y-6 max-w-6xl mx-auto text-xs text-slate-700 font-sans">
       
-      {/* HERO BANNER CAROUSEL DENGAN FITUR AUTO-SWIPE */}
-      <div className="relative rounded-3xl overflow-hidden h-[160px] shadow-sm group">
-        <div className={`w-full h-full p-8 flex flex-col justify-center text-white transition-all duration-700 ease-in-out ${bannerSlides[currentSlide].bg}`}>
-          <h2 className="text-base font-black tracking-wide md:text-lg">{bannerSlides[currentSlide].title}</h2>
-          <p className="text-slate-300 mt-1 max-w-xl text-[11px] md:text-xs leading-relaxed">{bannerSlides[currentSlide].desc}</p>
+      {/* HERO BANNER CAROUSEL DENGAN FITUR AUTO-SWIPE & REAL IMAGES */}
+      <div className="relative rounded-3xl overflow-hidden h-[160px] sm:h-[220px] md:h-[280px] shadow-sm group bg-slate-950">
+        
+        {/* Render Gambar JPEG Berdasarkan Slide Aktif */}
+        <div className="w-full h-full relative">
+          <img 
+            src={bannerSlides[currentSlide].src} 
+            alt={bannerSlides[currentSlide].title} 
+            className="w-full h-full object-cover object-center transition-all duration-700 ease-in-out"
+          />
+          {/* Overlay Linear Gradient agar Teks Selalu Kontras & Terbaca Jelas */}
+          <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent p-6 md:p-10 flex flex-col justify-center text-white">
+            <h2 className="text-base font-black tracking-wide md:text-xl lg:text-2xl">{bannerSlides[currentSlide].title}</h2>
+            <p className="text-slate-200 mt-1 max-w-xl text-[10px] sm:text-[11px] md:text-xs leading-relaxed opacity-90">{bannerSlides[currentSlide].desc}</p>
+          </div>
         </div>
         
         {/* Tombol Navigasi Manual Banner */}
-        <button onClick={prevSlide} className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/30 hover:bg-black/60 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"><ChevronLeft className="h-4 w-4" /></button>
-        <button onClick={nextSlide} className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/30 hover:bg-black/60 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"><ChevronRight className="h-4 w-4" /></button>
+        <button onClick={prevSlide} className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/30 hover:bg-black/60 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10"><ChevronLeft className="h-4 w-4" /></button>
+        <button onClick={nextSlide} className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/30 hover:bg-black/60 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10"><ChevronRight className="h-4 w-4" /></button>
 
         {/* Indikator Titik Banner */}
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10 bg-black/20 backdrop-blur-sm px-2.5 py-1 rounded-full">
           {bannerSlides.map((_, idx) => (
-            <div key={idx} className={`h-1.5 rounded-full transition-all ${currentSlide === idx ? "w-4 bg-white" : "w-1.5 bg-white/40"}`} />
+            <div key={idx} className={`h-1.5 rounded-full transition-all duration-300 ${currentSlide === idx ? "w-4 bg-white" : "w-1.5 bg-white/40"}`} />
           ))}
         </div>
       </div>
 
+      {/* PRODUK KONTRAK MANAJEMEN ASET */}
       <div className="bg-white border rounded-2xl p-4 flex justify-between items-center shadow-sm">
         <div>
           <h3 className="font-bold text-slate-900 text-xs">Produk Kontrak Manajemen Aset</h3>
@@ -134,6 +145,7 @@ export default function BerandaPage() {
         </div>
       </div>
 
+      {/* DAFTAR KARTU PRODUK PAKET INVESTASI */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {PACKAGES.map((pkg) => (
           <div key={pkg.id} className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm flex flex-col justify-between hover:border-blue-200 transition-all">
