@@ -1,11 +1,12 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Save, Upload } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 export default function ProfilPage() {
   const [emailUser, setEmailUser] = useState("");
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
   
   // State Input Form
   const [fullName, setFullName] = useState("");
@@ -16,6 +17,10 @@ export default function ProfilPage() {
   const [paymentMethod, setPaymentMethod] = useState("DANA");
   const [accountNumber, setAccountNumber] = useState("");
   const [accountName, setAccountName] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  // Reference untuk memicu klik pada input galeri tersembunyi
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     async function fetchProfile() {
@@ -32,12 +37,69 @@ export default function ProfilPage() {
           setPaymentMethod(data.payment_method || "DANA");
           setAccountNumber(data.account_number || "");
           setAccountName(data.account_name || "");
+          setAvatarUrl(data.avatar_url || null);
         }
       }
       setLoading(false);
     }
     fetchProfile();
   }, []);
+
+  // Fungsi untuk memicu jendela pencarian berkas media / galeri
+  const handleTriggerUpload = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  // Fungsi memproses unggahan gambar setelah dipilih dari galeri
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Proteksi batas file gambar maksimal 2MB
+    if (file.size > 2 * 1024 * 1024) {
+      return alert("Ukuran foto terlalu besar! Batas maksimal adalah 2MB.");
+    }
+
+    setUploading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+      const filePath = `avatars/${fileName}`;
+
+      // 1. Unggah berkas gambar asli ke Storage Bucket Supabase 'investasi'
+      const { error: uploadError } = await supabase.storage
+        .from("investasi")
+        .upload(filePath, file, { cacheControl: "3600", upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // 2. Dapatkan tautan URL publik dari gambar yang berhasil disimpan
+      const { data: { publicUrl } } = supabase.storage
+        .from("investasi")
+        .getPublicUrl(filePath);
+
+      // 3. Sinkronisasikan kolom avatar_url di tabel profil database
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ avatar_url: publicUrl })
+        .eq("id", user.id);
+
+      if (updateError) throw updateError;
+
+      setAvatarUrl(publicUrl);
+      alert("Foto profil berhasil diperbarui!");
+    } catch (error: any) {
+      console.error(error);
+      alert("Gagal mengunggah foto: " + (error.message || "Pastikan setelan Bucket Storage 'investasi' Anda publik."));
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,7 +109,7 @@ export default function ProfilPage() {
 
       const { error } = await supabase.from("profiles").upsert({
         id: user.id,
-        email: emailUser, // Memasukkan email agar lolos batasan NOT NULL database
+        email: emailUser, 
         full_name: fullName,
         phone_number: phoneNumber,
         address: address,
@@ -55,7 +117,8 @@ export default function ProfilPage() {
         education: education,
         payment_method: paymentMethod,
         account_number: accountNumber,
-        account_name: accountName
+        account_name: accountName,
+        avatar_url: avatarUrl
       });
 
       if (error) throw error;
@@ -74,19 +137,43 @@ export default function ProfilPage() {
 
   return (
     <div className="max-w-6xl mx-auto p-2">
+      
+      {/* INPUT FILE MEDIA TERSEMBUNYI (Pemicu Utama Galeri Perangkat) */}
+      <input 
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept="image/jpeg, image/png, image/jpg"
+        className="hidden"
+      />
+
       {/* SEKAT TATA LETAK UTAMA GRID BERDAMPINGAN */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         
         {/* BLOK KIRI: AVATAR FOTO PROFIL */}
         <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm text-center flex flex-col items-center justify-center">
-          <div className="w-24 h-24 bg-[#0B1A30] text-white rounded-full flex items-center justify-center text-xl font-bold mb-4 shadow-md border-4 border-slate-50 uppercase">
-            {getInitials(fullName)}
+          <div className="w-24 h-24 bg-[#0B1A30] text-white rounded-full flex items-center justify-center text-xl font-bold mb-4 shadow-md border-4 border-slate-50 uppercase overflow-hidden relative">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Profil" className="w-full h-full object-cover" />
+            ) : (
+              getInitials(fullName)
+            )}
+            {uploading && (
+              <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-[10px] text-white font-medium">
+                Memuat...
+              </div>
+            )}
           </div>
           <h4 className="text-sm font-bold text-slate-800 uppercase tracking-tight">{fullName || "MEMBER AURORA"}</h4>
           <p className="text-[11px] text-slate-400 font-medium mb-5 lowercase">{emailUser}</p>
           
-          <button type="button" onClick={() => alert("Fitur Upload Foto Profil Berhasil Diaktifkan!")} className="w-full bg-white hover:bg-slate-50 text-slate-600 text-xs font-semibold py-2 px-4 border border-slate-200 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm">
-            <Upload className="h-3.5 w-3.5" /> Ganti Foto
+          <button 
+            type="button" 
+            onClick={handleTriggerUpload}
+            disabled={uploading}
+            className="w-full bg-white hover:bg-slate-50 text-slate-600 text-xs font-semibold py-2 px-4 border border-slate-200 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm disabled:bg-slate-100 disabled:cursor-not-allowed"
+          >
+            <Upload className="h-3.5 w-3.5" /> {uploading ? "Mengunggah..." : "Ganti Foto"}
           </button>
         </div>
 
