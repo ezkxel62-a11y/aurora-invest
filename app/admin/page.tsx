@@ -136,13 +136,15 @@ export default function AdminPanelPage() {
     const unlockAudio = () => {
       if (audioCtx.state === "suspended") {
         audioCtx.resume().then(() => {
-          playSyntheticNotification(); // Pemicu wajib agar iOS menyetujui hak akses audio
           setIsAudioUnlocked(true);
         });
       } else {
-        playSyntheticNotification();
         setIsAudioUnlocked(true);
       }
+      
+      // CRITICAL FIX: Hapus listener setelah interaksi pertama agar tidak memicu bunyi di setiap ketukan berikutnya!
+      document.removeEventListener("click", unlockAudio);
+      document.removeEventListener("touchstart", unlockAudio);
     };
 
     // Daftarkan aksi sentuhan fisik pertama user pada layar iPhone untuk memicu izin audio
@@ -163,12 +165,21 @@ export default function AdminPanelPage() {
           "postgres_changes",
           { event: "INSERT", schema: "public", table: "deposits" },
           (payload) => {
-            console.log("Transaksi Masuk Terdeteksi:", payload);
-            playSyntheticNotification(); // Putar sinyal suara sintetis langsung melalui hardware internal ponsel
-            fetchTransactions(); // Segarkan list data otomatis tanpa klik refresh
+            console.log("Transaksi Masuk Terdeteksi via Realtime:", payload);
+            
+            // Mainkan alarm HANYA saat ada transaksi riil baru masuk
+            playSyntheticNotification(); 
+            
+            // CRITICAL REALTIME FIX: Masukkan data baru ke UI secara instan agar tidak perlu refresh manual
+            setTransactions((prev) => [payload.new, ...prev]);
+            
+            // Tarik data profil relasi lengkap dari database di latar belakang
+            fetchTransactions(); 
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          console.log("Status Koneksi Jalur Realtime Aurora:", status);
+        });
     };
 
     // Jalankan subskripsi saat halaman dimuat pertama kali
@@ -292,6 +303,7 @@ export default function AdminPanelPage() {
         {/* Kontrol Fleksibel Indikator Audio Proteksi iOS & Tombol Refresh */}
         <div className="w-full sm:w-auto flex flex-col sm:flex-row sm:items-center gap-2">
           <button 
+            type="button"
             onClick={triggerManualSoundTest}
             className={`w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[10px] font-black border transition active:scale-95 cursor-pointer ${
               isAudioUnlocked ? "bg-green-50 text-green-600 border-green-200" : "bg-amber-50 text-amber-600 border-amber-200 animate-pulse"
@@ -301,6 +313,7 @@ export default function AdminPanelPage() {
             {isAudioUnlocked ? "🔊 Notif Suara Aktif (Ketuk untuk Tes)" : "⚡ Ketuk Layar HP Untuk Aktifkan Suara"}
           </button>
           <button 
+            type="button"
             onClick={handleRefresh} 
             className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-white border border-slate-200 px-4 py-2.5 rounded-xl font-bold text-slate-800 shadow-sm hover:bg-slate-100 transition active:scale-95"
           >
@@ -312,6 +325,7 @@ export default function AdminPanelPage() {
       {/* Tab Navigasi - Responsif */}
       <div className="flex border-b border-slate-200 mb-6 gap-1 bg-slate-200/60 p-1 rounded-xl w-full max-w-xs">
         <button
+          type="button"
           onClick={() => setActiveTab("transactions")}
           className={`flex items-center justify-center gap-1.5 w-1/2 py-2.5 font-bold rounded-lg transition-all text-xs ${
             activeTab === "transactions" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
@@ -320,6 +334,7 @@ export default function AdminPanelPage() {
           <FileText className="h-3.5 w-3.5" /> Transaksi ({transactions.length})
         </button>
         <button
+          type="button"
           onClick={() => setActiveTab("investors")}
           className={`flex items-center justify-center gap-1.5 w-1/2 py-2.5 font-bold rounded-lg transition-all text-xs ${
             activeTab === "investors" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
@@ -376,11 +391,12 @@ export default function AdminPanelPage() {
                           </span>
                         </td>
                         <td className="p-4 font-extrabold text-sm text-slate-900">
-                          Rp {item.amount.toLocaleString("id-ID")}
+                          Rp {item.amount?.toLocaleString("id-ID") || 0}
                         </td>
                         <td className="p-4">
                           {item.proof_url ? (
                             <button 
+                              type="button"
                               onClick={() => setSelectedProofUrl(item.proof_url)}
                               className="flex items-center gap-1 bg-blue-50 text-blue-600 border border-blue-100 px-2 py-1 rounded-md font-bold hover:bg-blue-100 transition text-[10px]"
                             >
@@ -399,10 +415,10 @@ export default function AdminPanelPage() {
                         <td className="p-4 flex justify-center gap-2">
                           {item.status === "pending" ? (
                             <>
-                              <button onClick={() => handleDecision(item, "approve")} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl font-bold flex items-center gap-1 transition-all shadow-sm">
+                              <button type="button" onClick={() => handleDecision(item, "approve")} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl font-bold flex items-center gap-1 transition-all shadow-sm">
                                 <CheckCircle className="h-3.5 w-3.5" /> Setuju
                               </button>
-                              <button onClick={() => handleDecision(item, "reject")} className="bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded-xl font-bold flex items-center gap-1 transition-all shadow-sm">
+                              <button type="button" onClick={() => handleDecision(item, "reject")} className="bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded-xl font-bold flex items-center gap-1 transition-all shadow-sm">
                                 <XCircle className="h-3.5 w-3.5" /> Tolak
                               </button>
                             </>
@@ -453,7 +469,7 @@ export default function AdminPanelPage() {
                       <div className="text-right">
                         <span className="text-slate-400 font-medium block">Bukti Transfer:</span>
                         {item.proof_url ? (
-                          <button onClick={() => setSelectedProofUrl(item.proof_url)} className="text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 mt-0.5">
+                          <button type="button" onClick={() => setSelectedProofUrl(item.proof_url)} className="text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 mt-0.5">
                             <Eye className="h-3 w-3" /> Lihat Foto
                           </button>
                         ) : (
@@ -462,7 +478,7 @@ export default function AdminPanelPage() {
                       </div>
                     </div>
 
-                    {/* KOTAK INFORMASI DETAIL DATA REKENING USER (TERINTEGRASI SINKRON) */}
+                    {/* KOTAK INFORMASI DETAIL DATA REKENING USER */}
                     <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 flex items-start gap-2 text-[11px]">
                       <CreditCard className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
                       <div className="space-y-0.5 min-w-0 flex-1">
@@ -478,15 +494,15 @@ export default function AdminPanelPage() {
 
                     <div className="flex justify-between items-center bg-slate-50/50 rounded-2xl px-3 py-2">
                       <span className="text-slate-500 font-semibold text-[11px]">Nominal Asset:</span>
-                      <span className="font-black text-sm text-slate-900">Rp {item.amount.toLocaleString("id-ID")}</span>
+                      <span className="font-black text-sm text-slate-900">Rp {item.amount?.toLocaleString("id-ID") || 0}</span>
                     </div>
 
                     {item.status === "pending" && (
                       <div className="grid grid-cols-2 gap-2 pt-1">
-                        <button onClick={() => handleDecision(item, "approve")} className="bg-emerald-600 text-white font-bold py-2 rounded-xl text-center active:bg-emerald-700 flex items-center justify-center gap-1 transition-all">
+                        <button type="button" onClick={() => handleDecision(item, "approve")} className="bg-emerald-600 text-white font-bold py-2 rounded-xl text-center active:bg-emerald-700 flex items-center justify-center gap-1 transition-all">
                           <CheckCircle className="h-3.5 w-3.5" /> Setujui
                         </button>
-                        <button onClick={() => handleDecision(item, "reject")} className="bg-rose-600 text-white font-bold py-2 rounded-xl text-center active:bg-rose-700 flex items-center justify-center gap-1 transition-all">
+                        <button type="button" onClick={() => handleDecision(item, "reject")} className="bg-rose-600 text-white font-bold py-2 rounded-xl text-center active:bg-rose-700 flex items-center justify-center gap-1 transition-all">
                           <XCircle className="h-3.5 w-3.5" /> Tolak
                         </button>
                       </div>
@@ -564,6 +580,7 @@ export default function AdminPanelPage() {
             </div>
 
             <button 
+              type="button"
               onClick={() => setSelectedProofUrl(null)} 
               className="mt-4 w-full bg-slate-900 hover:bg-slate-800 text-white py-2.5 rounded-xl text-xs font-bold shadow-sm transition active:scale-98 cursor-pointer"
             >
