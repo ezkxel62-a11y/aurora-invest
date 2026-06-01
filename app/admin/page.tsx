@@ -27,21 +27,24 @@ export default function AdminPanelPage() {
 
   // FUNGSI BARU: Update pesan di Telegram saat Admin klik tombol di Panel
   const updateTelegramMessage = async (item: any, status: string) => {
-    try {
-      await fetch(`https://api.telegram.org/bot8769600539:AAEDhHK-QjFQzbRwiAnGg2mi1_iaw3h2-r4/editMessageText`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: item.telegram_chat_id,
-          message_id: item.telegram_message_id,
-          text: `*Status Transaksi Diperbarui*\n\nNominal: Rp ${Number(item.amount).toLocaleString('id-ID')}\nStatus: ${status === 'approved' ? '✅ BERHASIL' : '❌ DITOLAK'}\n\nDiproses oleh Admin Panel Aurora.`,
-          parse_mode: 'Markdown',
-        }),
-      });
-    } catch (e) {
-      console.error("Gagal update Telegram:", e);
-    }
-  };
+  // Ambil tipe transaksi dari item, default ke "DEPOSIT" jika undefined
+  const transactionType = item.type?.toUpperCase() || "DEPOSIT"; 
+  
+  try {
+    await fetch(`https://api.telegram.org/bot8769600539:AAEDhHK-QjFQzbRwiAnGg2mi1_iaw3h2-r4/editMessageText`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: item.telegram_chat_id,
+        message_id: item.telegram_message_id,
+        text: `*Status Transaksi Diperbarui*\n\nJenis: ${transactionType}\nNominal: Rp ${Number(item.amount).toLocaleString('id-ID')}\nStatus: ${status === 'approved' ? '✅ BERHASIL' : '❌ DITOLAK'}\n\nDiproses oleh Admin Panel Aurora.`,
+        parse_mode: 'Markdown',
+      }),
+    });
+  } catch (e) {
+    console.error("Gagal update Telegram:", e);
+  }
+};
 
   // Fungsi mengambil seluruh data transaksi beserta detail data rekening profil investor
   const fetchTransactions = async () => {
